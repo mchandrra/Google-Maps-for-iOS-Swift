@@ -8,7 +8,13 @@
 
 import UIKit
 
-class ViewController: UIViewController, CLLocationManagerDelegate {
+enum TravelModes: Int {
+    case driving
+    case walking
+    case bicycling
+}
+
+class ViewController: UIViewController, CLLocationManagerDelegate, GMSMapViewDelegate {
     
     @IBOutlet weak var viewMap: GMSMapView!
     
@@ -29,32 +35,25 @@ class ViewController: UIViewController, CLLocationManagerDelegate {
     var destinationMarker: GMSMarker!
     
     var routePolyline: GMSPolyline!
+    
+    var markersArray: Array<GMSMarker> = []
+    
+    var waypointsArray: Array<String> = []
+    
+    var travelMode = TravelModes.driving
 
     override func viewDidLoad() {
         super.viewDidLoad()
         // Do any additional setup after loading the view, typically from a nib.
-        //let camera: GMSCameraPosition = GMSCameraPosition.cameraWithLatitude(36.155091, longitude: -123.328653, zoom: 5.0)
-       //viewMap.camera = camera
+        
         
         locationManager.delegate = self
         locationManager.requestWhenInUseAuthorization()
+        //let camera: GMSCameraPosition = GMSCameraPosition.cameraWithLatitude(36.155091, longitude: -123.328653, zoom: 5.0)
+        //viewMap.camera = camera
+        viewMap.delegate = self
         viewMap.addObserver(self, forKeyPath: "myLocation", options: NSKeyValueObservingOptions.New, context: nil)
         
-        
-        
-        /*
-        let camera = GMSCameraPosition.cameraWithLatitude(-33.86,
-            longitude: 151.20, zoom: 6)
-        let mapView = GMSMapView.mapWithFrame(CGRectZero, camera: camera)
-        mapView.myLocationEnabled = true
-        self.view = mapView
-        
-        let marker = GMSMarker()
-        marker.position = CLLocationCoordinate2DMake(-33.86, 151.20)
-        marker.title = "Sydney"
-        marker.snippet = "Australia"
-        marker.map = mapView
-        */
         
     }
 
@@ -65,12 +64,10 @@ class ViewController: UIViewController, CLLocationManagerDelegate {
     
     
     override func observeValueForKeyPath(keyPath: String?, ofObject object: AnyObject?, change: [String : AnyObject]?, context: UnsafeMutablePointer<Void>) {
-    //override func observeValueForKeyPath(keyPath: String, ofObject object: AnyObject, change: [NSObject : AnyObject], context: UnsafeMutablePointer<Void>) {
         if !didFindMyLocation {
             let myLocation: CLLocation = change?[NSKeyValueChangeNewKey] as! CLLocation
             viewMap.camera = GMSCameraPosition.cameraWithTarget(myLocation.coordinate, zoom: 10.0)
             viewMap.settings.myLocationButton = true
-            
             didFindMyLocation = true
         }
     }
@@ -161,10 +158,16 @@ class ViewController: UIViewController, CLLocationManagerDelegate {
         
         
         let createRouteAction = UIAlertAction(title: "Create Route", style: UIAlertActionStyle.Default) { (alertAction) -> Void in
+            
+            if let polyline = self.routePolyline {
+                self.clearRoute()
+                self.waypointsArray.removeAll(keepCapacity: false)
+            }
+            
             let origin = (addressAlert.textFields![0] as UITextField).text! as String
             let destination = (addressAlert.textFields![1] as UITextField).text! as String
             
-            self.mapTasks.getDirections(origin, destination: destination, waypoints: nil, travelMode: nil, completionHandler: { (status, success) -> Void in
+            self.mapTasks.getDirections(origin, destination: destination, waypoints: nil, travelMode: self.travelMode, completionHandler: { (status, success) -> Void in
                 if success {
                     self.configureMapAndMarkersForRoute()
                     self.drawRoute()
@@ -188,8 +191,44 @@ class ViewController: UIViewController, CLLocationManagerDelegate {
     
     
     @IBAction func changeTravelMode(sender: AnyObject) {
+        let actionSheet = UIAlertController(title: "Travel Mode", message: "Select travel mode:", preferredStyle: UIAlertControllerStyle.ActionSheet)
+        
+        let drivingModeAction = UIAlertAction(title: "Driving", style: UIAlertActionStyle.Default) { (alertAction) -> Void in
+            self.travelMode = TravelModes.driving
+            self.recreateRoute()
+        }
+        
+        let walkingModeAction = UIAlertAction(title: "Walking", style: UIAlertActionStyle.Default) { (alertAction) -> Void in
+            self.travelMode = TravelModes.walking
+            self.recreateRoute()
+        }
+        
+        let bicyclingModeAction = UIAlertAction(title: "Bicycling", style: UIAlertActionStyle.Default) { (alertAction) -> Void in
+            self.travelMode = TravelModes.bicycling
+            self.recreateRoute()
+        }
+        
+        let closeAction = UIAlertAction(title: "Close", style: UIAlertActionStyle.Cancel) { (alertAction) -> Void in
+            
+        }
+        
+        actionSheet.addAction(drivingModeAction)
+        actionSheet.addAction(walkingModeAction)
+        actionSheet.addAction(bicyclingModeAction)
+        actionSheet.addAction(closeAction)
+        
+        presentViewController(actionSheet, animated: true, completion: nil)
         
     }
+    
+    // MARK: CLLocationManagerDelegate method implementation
+    
+    func locationManager(manager: CLLocationManager, didChangeAuthorizationStatus status: CLAuthorizationStatus) {
+        if status == CLAuthorizationStatus.AuthorizedWhenInUse {
+            viewMap.myLocationEnabled = true
+        }
+    }
+
     
     
     // MARK: Custom method implementation
@@ -243,7 +282,20 @@ class ViewController: UIViewController, CLLocationManagerDelegate {
         destinationMarker = GMSMarker(position: self.mapTasks.destinationCoordinate)
         destinationMarker.map = self.viewMap
         destinationMarker.icon = GMSMarker.markerImageWithColor(UIColor.redColor())
-        destinationMarker.title = self.mapTasks.destinationAddress    
+        destinationMarker.title = self.mapTasks.destinationAddress
+        
+        if waypointsArray.count > 0 {
+            for waypoint in waypointsArray {
+                let lat: Double = (waypoint.componentsSeparatedByString(",")[0] as NSString).doubleValue
+                let lng: Double = (waypoint.componentsSeparatedByString(",")[1] as NSString).doubleValue
+                
+                let marker = GMSMarker(position: CLLocationCoordinate2DMake(lat, lng))
+                marker.map = viewMap
+                marker.icon = GMSMarker.markerImageWithColor(UIColor.purpleColor())
+                
+                markersArray.append(marker)
+            }
+        }
     }
     
     
@@ -258,8 +310,51 @@ class ViewController: UIViewController, CLLocationManagerDelegate {
     func displayRouteInfo() {
         lblInfo.text = mapTasks.totalDistance + "\n" + mapTasks.totalDuration
     }
-
     
+    func clearRoute() {
+        originMarker.map = nil
+        destinationMarker.map = nil
+        routePolyline.map = nil
+        
+        originMarker = nil
+        destinationMarker = nil
+        routePolyline = nil
+        
+        if markersArray.count > 0 {
+            for marker in markersArray {
+                marker.map = nil
+            }
+            
+            markersArray.removeAll(keepCapacity: false)
+        }
+    }
+    func recreateRoute() {
+        if let polyline = routePolyline {
+            clearRoute()
+           
+            mapTasks.getDirections(mapTasks.originAddress, destination: mapTasks.destinationAddress, waypoints: waypointsArray, travelMode: nil, completionHandler: { (status, success) -> Void in
+                
+                if success {
+                    self.configureMapAndMarkersForRoute()
+                    self.drawRoute()
+                    self.displayRouteInfo()
+                }
+                else {
+                    print(status)
+                }
+            })
+        }
+    }
+    
+
+    func mapView(mapView: GMSMapView!, didTapAtCoordinate coordinate: CLLocationCoordinate2D) {
+        if let polyline = routePolyline {
+            let positionString = String(format: "%f", coordinate.latitude) + "," + String(format: "%f", coordinate.longitude)
+            waypointsArray.append(positionString)
+            
+            recreateRoute()
+        }
+    }
 
 }
 

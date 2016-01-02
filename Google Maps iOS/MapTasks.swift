@@ -96,11 +96,39 @@ class MapTasks: NSObject {
     }
     
     
-    func getDirections(origin: String!, destination: String!, waypoints: Array<String>!, travelMode: AnyObject!, completionHandler: ((status: String, success: Bool) -> Void)) {
+    func getDirections(origin: String!, destination: String!, waypoints: Array<String>!, travelMode: TravelModes!, completionHandler: ((status: String, success: Bool) -> Void)) {
         
         if let originLocation = origin {
             if let destinationLocation = destination {
                 var directionsURLString = baseURLDirections + "origin=" + originLocation + "&destination=" + destinationLocation
+                
+                if let routeWaypoints = waypoints {
+                    directionsURLString += "&waypoints=optimize:true"
+                    
+                    for waypoint in routeWaypoints {
+                        directionsURLString += "|" + waypoint
+                    }
+                }
+                
+                
+                if let travel = travelMode {
+                    var travelModeString = ""
+                    
+                    switch travelMode.rawValue {
+                    case TravelModes.walking.rawValue:
+                        travelModeString = "walking"
+                        
+                    case TravelModes.bicycling.rawValue:
+                        travelModeString = "bicycling"
+                        
+                    default:
+                        travelModeString = "driving"
+                    }
+                    
+                    
+                    directionsURLString += "&mode=" + travelModeString
+                }
+                
                 
                 directionsURLString = directionsURLString.stringByAddingPercentEscapesUsingEncoding(NSUTF8StringEncoding)!
                 
